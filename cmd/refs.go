@@ -15,7 +15,7 @@ import (
 )
 
 var references struct {
-	meter, charger, vehicle, circuit, tariff, curtailer []string
+	meter, battery, charger, vehicle, circuit, tariff, curtailer []string
 }
 
 func collectRefs(conf globalconfig.All) error {
@@ -86,6 +86,7 @@ func collectSiteRefs(conf globalconfig.All) error {
 	references.meter = append(references.meter, refs.Meters.AuxMetersRef...)
 	references.meter = append(references.meter, refs.Meters.ConsumerMetersRef...)
 	references.curtailer = append(references.curtailer, refs.Curtailers...)
+	references.battery = append(references.battery, refs.Meters.BatteryMetersRef...)
 
 	// append devices from settings
 	if v, err := settings.String(keys.GridMeter); err == nil && v != "" {
@@ -94,7 +95,12 @@ func collectSiteRefs(conf globalconfig.All) error {
 
 	for _, key := range []string{keys.PvMeters, keys.BatteryMeters, keys.ExtMeters, keys.AuxMeters, keys.ConsumerMeters} {
 		if v, err := settings.String(key); err == nil && v != "" {
-			references.meter = append(references.meter, strings.Split(v, ",")...)
+			refs := strings.Split(v, ",")
+			references.meter = append(references.meter, refs...)
+			// Keep battery references separate for master validation.
+			if key == keys.BatteryMeters {
+				references.battery = append(references.battery, refs...)
+			}
 		}
 	}
 
