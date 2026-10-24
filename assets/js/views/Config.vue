@@ -203,7 +203,7 @@
 							:meter="meter"
 							meter-type="battery"
 							:has-error="hasDeviceError('meter', meter.name)"
-							:tags="deviceTags('meter', meter.name)"
+							:tags="batteryTags(meter)"
 							@edit="(type, id) => openModal('meter', { type, id })"
 							@enable="handleDisable('meter', meter.id, false)"
 						/>
@@ -552,6 +552,7 @@
 				/>
 				<MeterModal
 					:is-sponsor="isSponsor"
+					:battery-meters="batteryMeters"
 					@changed="meterChanged"
 					@disable="({ id, disable }) => handleDisable('meter', id, disable)"
 				/>
@@ -1731,6 +1732,13 @@ export default defineComponent({
 		},
 		deviceTags(type: DeviceType, id: string) {
 			return this.deviceValues[type][id] || {};
+		},
+		batteryTags(meter: ConfigMeter) {
+			const tags = this.deviceTags("meter", meter.name);
+			const masterName = (meter.config as { master?: string } | undefined)?.master;
+			const master = this.meters.find((m) => m.name === masterName);
+			if (!master) return tags;
+			return { ...tags, master: { value: master.deviceTitle || master.name } };
 		},
 		curtailmentBanner(type: DeviceType, name: string): string | undefined {
 			// devices report the allowed feed-in percent, 100 = uncurtailed

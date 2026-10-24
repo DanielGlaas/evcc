@@ -79,7 +79,7 @@ const PHASE_TAGS = ["phaseCurrents", "phaseVoltages", "phasePowers"];
 const FORECAST_TAGS = ["priceRates", "co2Rates", "solarRates", "temperatureRates"];
 
 // display order, remaining tags follow in backend order
-const FIRST_TAGS = ["power", "soc", "capacity", "energy", "returnEnergy"];
+const FIRST_TAGS = ["master", "power", "soc", "capacity", "energy", "returnEnergy"];
 
 export default {
 	name: "DeviceTags",
