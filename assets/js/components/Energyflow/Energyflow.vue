@@ -32,6 +32,7 @@
 				:homePower="homePower"
 				:batterySoc="batterySoc"
 				:powerUnit="powerUnit"
+				:vehicleIcons="vehicleIcons"
 				:inPower="inPower"
 				:outPower="outPower"
 			/>
@@ -109,7 +110,7 @@
 									:key="index"
 									:name="p.title || p.name"
 									:power="p.power"
-									:powerUnit="pvPowerUnit"
+									:powerUnit="powerUnit"
 									:data-testid="`energyflow-entry-production-${index}`"
 								/>
 							</template>
@@ -135,14 +136,24 @@
 								</template>
 								<template v-if="hasMultipleBatteries" #expanded>
 									<EnergyflowEntry
-										v-for="(b, index) in batteryDevices"
-										:key="index"
-										:name="b.title || b.name"
-										:details="b.soc"
+										v-for="(row, index) in batteryDevices"
+										:key="row.device.name || index"
+										:class="{
+											'ms-4': row.depth > 0,
+											'text-success':
+												row.device.powerControlStatus === 'applied' &&
+												row.device.power > 0,
+											'text-danger':
+												row.device.powerControlStatus === 'failed',
+										}"
+										:aria-label="batteryControlAriaLabel(row.device)"
+										:name="row.device.title || row.device.name"
+										:details="row.device.soc"
 										:detailsFmt="batteryFmt"
-										:power="dischargePower(b.power)"
-										:powerUnit="batteryPowerUnit"
-									/>
+										:power="dischargePower(row.device.power)"
+										:powerUnit="powerUnit"
+									>
+									</EnergyflowEntry>
 								</template>
 							</EnergyflowEntry>
 							<EnergyflowEntry
@@ -190,52 +201,55 @@
 										:key="index"
 										:name="c.title || c.name"
 										:power="c.power"
-										:powerUnit="consumersPowerUnit"
+										:powerUnit="powerUnit"
 										icon="vehicle"
 										data-testid="energyflow-entry-consumer"
-										:iconProps="{ name: c.icon || 'generic' }"
+										:iconProps="{ names: [c.icon || 'generic'] }"
 									/>
 									<EnergyflowEntry
 										:name="$t('energy.consumers.others')"
 										:power="otherPower"
-										:powerUnit="consumersPowerUnit"
+										:powerUnit="powerUnit"
 										icon="vehicle"
 										data-testid="energyflow-entry-consumer-other"
-										:iconProps="{ name: 'generic' }"
+										:iconProps="{ names: ['generic'] }"
 									/>
 								</template>
 							</EnergyflowEntry>
 							<EnergyflowEntry
-								v-for="g in loadpointGroups"
-								:key="`${g.id}-${showCo2}`"
-								:name="g.label"
-								:icon="g.icon"
-								:iconProps="g.iconProps"
-								:power="g.power"
+								:key="`loadpoints-${showCo2}`"
+								:name="loadpointsLabel"
+								icon="vehicle"
+								:iconProps="{ names: vehicleIcons }"
+								:power="loadpointsPower"
 								:powerUnit="powerUnit"
 								:details="
-									g.active
+									activeLoadpointsCount
 										? detailsValue(tariffPriceLoadpoints, tariffCo2Loadpoints)
 										: undefined
 								"
 								:detailsFmt="detailsFmt"
 								:detailsClickable="hasPriceAndCo2"
-								:data-testid="`energyflow-entry-${g.id}`"
-								:expanded="g.expanded"
+								data-testid="energyflow-entry-loadpoints"
+								:expanded="loadpointsExpanded"
 								@details-clicked="toggleCo2"
-								@toggle="toggleLoadpoints(g.id)"
+								@toggle="toggleLoadpoints"
 							>
-								<template v-if="g.loadpoints.length > 0" #expanded>
+								<template v-if="loadpoints.length > 0" #expanded>
 									<EnergyflowEntry
-										v-for="lp in g.loadpoints"
+										v-for="lp in loadpoints"
 										:key="lp.id"
 										:name="lp.displayTitle"
 										:power="lp.chargePower"
-										:powerUnit="g.powerUnit"
+										:powerUnit="powerUnit"
 										icon="vehicle"
-										:iconProps="{ name: lp.icon }"
+										:iconProps="{ names: [lp.icon] }"
 										:details="lp.vehicleSoc || undefined"
-										:detailsFmt="g.detailsFmt"
+										:detailsFmt="
+											lp.chargerFeatureHeating
+												? fmtLoadpointTemp
+												: fmtLoadpointSoc
+										"
 									/>
 								</template>
 							</EnergyflowEntry>
@@ -279,14 +293,24 @@
 								</template>
 								<template v-if="hasMultipleBatteries" #expanded>
 									<EnergyflowEntry
-										v-for="(b, index) in batteryDevices"
-										:key="index"
-										:name="b.title || b.name"
-										:details="b.soc"
+										v-for="(row, index) in batteryDevices"
+										:key="row.device.name || index"
+										:class="{
+											'ms-4': row.depth > 0,
+											'text-success':
+												row.device.powerControlStatus === 'applied' &&
+												row.device.power < 0,
+											'text-danger':
+												row.device.powerControlStatus === 'failed',
+										}"
+										:aria-label="batteryControlAriaLabel(row.device)"
+										:name="row.device.title || row.device.name"
+										:details="row.device.soc"
 										:detailsFmt="batteryFmt"
-										:power="chargePower(b.power)"
-										:powerUnit="batteryPowerUnit"
-									/>
+										:power="chargePower(row.device.power)"
+										:powerUnit="powerUnit"
+									>
+									</EnergyflowEntry>
 								</template>
 							</EnergyflowEntry>
 							<EnergyflowEntry
@@ -319,10 +343,12 @@ import AnimatedNumber from "../Helper/AnimatedNumber.vue";
 import settings from "@/settings";
 import collector from "@/mixins/collector.js";
 import { defineComponent, type PropType } from "vue";
+import { batteryDeviceRows, type BatteryDeviceRow } from "./batteryDevices";
 import {
 	SMART_COST_TYPE,
 	type BATTERY_MODE,
 	type Battery,
+	type BatteryMeter,
 	type Meter,
 	type CURRENCY,
 	type UiForecast,
@@ -405,8 +431,8 @@ export default defineComponent({
 		batteryPower() {
 			return this.battery?.power ?? 0;
 		},
-		batteryDevices() {
-			return this.battery?.devices ?? [];
+		batteryDevices(): BatteryDeviceRow[] {
+			return batteryDeviceRows(this.battery?.devices ?? []);
 		},
 		hasMultipleBatteries() {
 			return this.batteryDevices.length > 1;
@@ -424,11 +450,11 @@ export default defineComponent({
 		},
 		batteryDischargeLabel() {
 			return this.$t(
-				`main.energyflow.battery${this.batteryDischargeHold ? "DischargeHold" : "Discharge"}`
+				`main.energyflow.battery${this.batteryHold ? "DischargeHold" : "Discharge"}`
 			);
 		},
-		batteryDischargeHold() {
-			return this.batteryMode === "holddischarge";
+		batteryHold() {
+			return this.batteryMode === "hold";
 		},
 		batteryChargeHold() {
 			return this.batteryMode === "holdcharge";
@@ -442,32 +468,17 @@ export default defineComponent({
 		selfBattery() {
 			return Math.min(this.batteryDischarge, this.consumption - this.selfPv);
 		},
-		loadpointGroups() {
-			const group = (id: "charging" | "heating", expanded: boolean) => {
-				const heating = id === "heating";
-				const loadpoints = this.loadpoints.filter(
-					(lp) => !!lp.chargerFeatureHeating === heating
-				);
-				const labelKey = `main.energyflow.${heating ? "heaters" : "loadpoints"}`;
-				return {
-					id,
-					label: this.$t(labelKey, loadpoints.length),
-					loadpoints,
-					power: loadpoints.reduce((sum, lp) => sum + (lp.chargePower || 0), 0),
-					powerUnit: this.groupPowerUnit(loadpoints.map((lp) => lp.chargePower)),
-					active: loadpoints.some((lp) => lp.charging || lp.chargePower > 10),
-					icon: heating ? "vehicle" : "loadpoint",
-					iconProps: heating ? { name: "heater" } : {},
-					expanded,
-					detailsFmt: heating
-						? (temp: number) => this.fmtTemperature(temp)
-						: (soc: number) => this.fmtPercentage(soc, 0),
-				};
-			};
-			return [
-				group("charging", settings.energyflowLoadpoints),
-				group("heating", settings.energyflowHeating),
-			].filter((g) => g.loadpoints.length > 0);
+		activeLoadpoints() {
+			return this.loadpoints.filter((lp) => lp.charging || lp.chargePower > 10);
+		},
+		activeLoadpointsCount() {
+			return this.activeLoadpoints.length;
+		},
+		vehicleIcons() {
+			if (this.activeLoadpointsCount > 0) {
+				return this.activeLoadpoints.map((lp) => lp.icon);
+			}
+			return ["car"];
 		},
 		loadpointsPower() {
 			return this.loadpoints.reduce((sum, lp) => {
@@ -481,15 +492,6 @@ export default defineComponent({
 			return this.getPowerUnit(
 				Math.max(this.gridImport, this.selfPv, this.selfBattery, this.pvExport)
 			);
-		},
-		pvPowerUnit() {
-			return this.groupPowerUnit(this.pv.map((p) => p.power));
-		},
-		batteryPowerUnit() {
-			return this.groupPowerUnit(this.batteryDevices.map((b) => b.power));
-		},
-		consumersPowerUnit() {
-			return this.groupPowerUnit([...this.allConsumers.map((c) => c.power), this.otherPower]);
 		},
 		inPower() {
 			return this.gridImport + this.pvProduction + this.batteryDischarge;
@@ -508,6 +510,12 @@ export default defineComponent({
 		},
 		batteryFmt() {
 			return (soc: number) => this.fmtPercentage(soc, 0);
+		},
+		fmtLoadpointSoc() {
+			return (soc: number) => this.fmtPercentage(soc, 0);
+		},
+		fmtLoadpointTemp() {
+			return (temp: number) => this.fmtTemperature(temp);
 		},
 		smartCostCo2() {
 			return this.smartCostType === SMART_COST_TYPE.CO2;
@@ -562,8 +570,17 @@ export default defineComponent({
 		batteryExpanded() {
 			return settings.energyflowBattery;
 		},
+		loadpointsExpanded() {
+			return settings.energyflowLoadpoints;
+		},
 		consumersExpanded() {
 			return settings.energyflowConsumers;
+		},
+		loadpointsLabel() {
+			// @ts-expect-error plural
+			return this.$t("main.energyflow.loadpoints", this.activeLoadpointsCount, {
+				count: this.activeLoadpointsCount,
+			});
 		},
 		allConsumers() {
 			const label = (m: Meter) => m.title || m.name || "";
@@ -606,6 +623,14 @@ export default defineComponent({
 		window.removeEventListener("resize", this.updateHeight);
 	},
 	methods: {
+		batteryControlLabel(status?: BatteryMeter["powerControlStatus"]) {
+			return status ? this.$t(`main.energyflow.batteryPowerControl.${status}`) : undefined;
+		},
+		batteryControlAriaLabel(device: BatteryMeter) {
+			const label = this.batteryControlLabel(device.powerControlStatus);
+			const name = device.title || device.name;
+			return label && name ? `${name}: ${label}` : label;
+		},
 		detailsValue(price?: number, co2?: number) {
 			return this.showCo2 ? co2 : price;
 		},
@@ -624,10 +649,6 @@ export default defineComponent({
 		kw(watt: number) {
 			if (typeof watt !== "number") return "";
 			return this.fmtW(watt, this.powerUnit);
-		},
-		// sub-entries share a unit within their group, independent of the top-level unit
-		groupPowerUnit(powers: (number | undefined)[]) {
-			return this.getPowerUnit(Math.max(0, ...powers.map((p) => Math.abs(p || 0))));
 		},
 		toggleDetails() {
 			this.updateHeight();
@@ -657,12 +678,8 @@ export default defineComponent({
 			settings.energyflowPv = !settings.energyflowPv;
 			this.$nextTick(this.updateHeight);
 		},
-		toggleLoadpoints(id: "charging" | "heating") {
-			if (id === "heating") {
-				settings.energyflowHeating = !settings.energyflowHeating;
-			} else {
-				settings.energyflowLoadpoints = !settings.energyflowLoadpoints;
-			}
+		toggleLoadpoints() {
+			settings.energyflowLoadpoints = !settings.energyflowLoadpoints;
 			this.$nextTick(this.updateHeight);
 		},
 		toggleConsumers() {
