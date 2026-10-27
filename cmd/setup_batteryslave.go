@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 
@@ -13,6 +14,17 @@ type meterConfig struct {
 	name   string
 	values map[string]any
 }
+
+type batteryConfigWarning struct {
+	Device string `json:"device"`
+	Master string `json:"master"`
+	Reason string `json:"reason"`
+}
+
+const (
+	batteryConfigWarningInvalidMaster    = "invalidMaster"
+	batteryConfigWarningUnsupportedSlave = "unsupportedSlave"
+)
 
 func combineBatteryMeterConfigs(static []config.Named, configurable []config.Config) []meterConfig {
 	meters := make([]meterConfig, 0, len(static)+len(configurable))
@@ -28,7 +40,8 @@ func combineBatteryMeterConfigs(static []config.Named, configurable []config.Con
 	return meters
 }
 
-func clearMastersOfUncontrollableBatterySlaves(meters []meterConfig, batteryNames []string) {
+func clearMastersOfUncontrollableBatterySlaves(meters []meterConfig, batteryNames []string) []batteryConfigWarning {
+	var warnings []batteryConfigWarning
 	for _, meter := range meters {
 		if !slices.Contains(batteryNames, meter.name) {
 			continue
@@ -38,11 +51,14 @@ func clearMastersOfUncontrollableBatterySlaves(meters []meterConfig, batteryName
 		if err != nil || dev.Instance() == nil {
 			continue
 		}
-		clearMasterOfUncontrollableBatterySlave(batteryMeterTitleOrName(dev), meter.values, dev.Instance())
+		if warning := clearMasterOfUncontrollableBatterySlave(batteryMeterTitleOrName(dev), meter.values, dev.Instance()); warning != nil {
+			warnings = append(warnings, *warning)
+		}
 	}
+	return warnings
 }
 
-func clearMasterOfUncontrollableBatterySlave(name string, values map[string]any, meter api.Meter) bool {
+func clearMasterOfUncontrollableBatterySlave(name string, values map[string]any, meter api.Meter) *batteryConfigWarning {
 	var key string
 	var master string
 	for field, value := range values {
@@ -53,12 +69,12 @@ func clearMasterOfUncontrollableBatterySlave(name string, values map[string]any,
 		}
 	}
 	if key == "" || master == "" || core.SupportsBatterySlaveControl(meter) {
-		return false
+		return nil
 	}
 
 	log.WARN.Printf("battery %s: cannot be a slave, missing charge/discharge power control; ignoring master %s", name, master)
 	values[key] = nil
-	return true
+	return &batteryConfigWarning{Device: name, Master: master, Reason: batteryConfigWarningUnsupportedSlave}
 }
 
 func batteryMeterTitleOrName(dev config.Device[api.Meter]) string {
@@ -68,7 +84,8 @@ func batteryMeterTitleOrName(dev config.Device[api.Meter]) string {
 	return dev.Config().Name
 }
 
-func normalizeBatteryMasters(meters []meterConfig, batteryNames []string) {
+func normalizeBatteryMasters(meters []meterConfig, batteryNames []string) []batteryConfigWarning {
+	var warnings []batteryConfigWarning
 	isBattery := func(name string) bool {
 		return slices.Contains(batteryNames, name) && slices.ContainsFunc(meters, func(meter meterConfig) bool {
 			return meter.name == name
@@ -104,5 +121,18 @@ func normalizeBatteryMasters(meters []meterConfig, batteryNames []string) {
 
 		log.WARN.Printf("battery %s: invalid master %v, ignoring", meter.name, master)
 		meter.values[key] = nil
+		warnings = append(warnings, batteryConfigWarning{
+			Device: meterConfigTitleOrName(meter),
+			Master: fmt.Sprint(master),
+			Reason: batteryConfigWarningInvalidMaster,
+		})
 	}
+	return warnings
+}
+
+func meterConfigTitleOrName(meter meterConfig) string {
+	if title, ok := meter.values["deviceTitle"].(string); ok && title != "" {
+		return title
+	}
+	return meter.name
 }

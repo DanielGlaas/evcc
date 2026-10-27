@@ -1553,6 +1553,12 @@
       "onceTip": "Nur für diese Ladung",
       "permanent": "bleibt dauerhaft an"
     },
+    "batteryConfigWarnings": {
+      "invalidMaster": "Batterie {device}: Die Master-Referenz \"{master}\" ist ungültig und wurde ignoriert.",
+      "review": "Konfiguration prüfen",
+      "title": "Warnung zur Batteriekonfiguration",
+      "unsupportedSlave": "Batterie {device}: Die Master-Referenz \"{master}\" wird ignoriert, da keine Lade-/Entladeleistungssteuerung unterstützt wird."
+    },
     "chargingPlan": {
       "active": "Aktiv",
       "addRepeatingPlan": "Wiederholenden Plan hinzufügen",

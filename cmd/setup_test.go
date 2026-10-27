@@ -75,7 +75,7 @@ func TestNormalizeBatteryMasters(t *testing.T) {
 	}
 
 	meters := combineBatteryMeterConfigs(static, database)
-	normalizeBatteryMasters(meters, []string{"slave", "later", "db-slave", "invalid", "self", "empty", "unassigned-master", "db:42", "db:43", "db:44"})
+	warnings := normalizeBatteryMasters(meters, []string{"slave", "later", "db-slave", "invalid", "self", "empty", "unassigned-master", "db:42", "db:43", "db:44"})
 
 	if got := static[0].Other["master"]; got != "later" {
 		t.Fatalf("forward reference was not retained: got %v", got)
@@ -100,5 +100,24 @@ func TestNormalizeBatteryMasters(t *testing.T) {
 	}
 	if got := database[2].Data["master"]; got != nil {
 		t.Fatalf("invalid UI reference was not cleared: got %v", got)
+	}
+
+	wantWarnings := map[string]string{
+		"invalid":           "missing",
+		"self":              "self",
+		"unassigned-master": "unassigned",
+		"db:44":             "missing",
+	}
+	if len(warnings) != len(wantWarnings) {
+		t.Fatalf("warning count: got %d, want %d: %+v", len(warnings), len(wantWarnings), warnings)
+	}
+	for _, warning := range warnings {
+		if wantMaster, ok := wantWarnings[warning.Device]; !ok || warning.Master != wantMaster || warning.Reason != batteryConfigWarningInvalidMaster {
+			t.Errorf("unexpected warning: %+v", warning)
+		}
+		delete(wantWarnings, warning.Device)
+	}
+	if len(wantWarnings) != 0 {
+		t.Errorf("missing warnings: %v", wantWarnings)
 	}
 }
