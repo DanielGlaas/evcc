@@ -40,6 +40,7 @@
       "gridDischarge": "Netzentladen",
       "holdCharge": "Ladesperre",
       "holdDischarge": "Entladesperre",
+      "master": "Master",
       "ofTotal": "von {total}",
       "power": "Leistung",
       "soc": "Ladestand"
