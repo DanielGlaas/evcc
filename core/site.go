@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/cmd/shutdown"
@@ -61,7 +62,8 @@ type Site struct {
 	lpUpdateChan chan *Loadpoint
 
 	sync.RWMutex
-	log *util.Logger
+	log   *util.Logger
+	clock clock.Clock
 
 	// configuration
 	Title         string       `mapstructure:"title"`         // UI title
@@ -121,6 +123,7 @@ type Site struct {
 	batteryModeExternalTimer time.Time                   // Battery mode timer for external control
 	batteryModeApplied       map[string]api.BatteryMode  // Battery mode last applied by global control per battery meter
 	batterySlaveModeApplied  map[string]api.BatteryMode  // Battery mode last applied by slave control per battery meter
+	batterySlaveOutageSince  map[string]time.Time        // Start of the ongoing reading outage per master battery
 	suggestions              map[string]types.Suggestion // Optimizer suggestions by device key
 	suggestionActions        map[string]string           // last notified actionable optimizer action by device key
 	lastOptimizerSolve       *optimizerSolve             // last successful solve, reapplied to newer slots by the control cycle
@@ -409,6 +412,7 @@ func (site *Site) Boot(log *util.Logger, loadpoints []*Loadpoint, tariffs *tarif
 func NewSite() *Site {
 	site := &Site{
 		log:        util.NewLogger("site"),
+		clock:      clock.New(),
 		collectors: make(map[string]*metrics.Collector),
 	}
 
